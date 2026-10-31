@@ -64,46 +64,97 @@
     const colors = ['green', 'purple', 'pink', 'blue', 'yellow'];
     const board = document.getElementById('board');
     let playerName = "";
-    let markedCount = 0;
+    let hasWon = false;
     const loadTime = Date.now();
 
-    playerName = prompt("What is your name?", "") || "Player";
+    // Defaulting to your name
+    playerName = prompt("What is your name?", "עומרי") || "Player";
     document.getElementById('player-title').innerText = playerName + "'s Board";
     initBoard();
 
-    function generateColorPool() {
+    function generateValidPool() {
       let pool = [];
-      colors.forEach(c => { for (let i = 0; i < 5; i++) pool.push(c); });
-      for (let i = pool.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [pool[i], pool[j]] = [pool[j], pool[i]];
+      let isValid = false;
+
+      // Keep shuffling until no pink tiles touch
+      while (!isValid) {
+        pool = [];
+        colors.forEach(c => { for (let i = 0; i < 5; i++) pool.push(c); });
+        
+        for (let i = pool.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [pool[i], pool[j]] = [pool[j], pool[i]];
+        }
+
+        isValid = true;
+        for (let i = 0; i < 25; i++) {
+          if (pool[i] === 'pink') {
+            const row = Math.floor(i / 5);
+            const col = i % 5;
+            // Check right neighbor
+            if (col < 4 && pool[i + 1] === 'pink') isValid = false;
+            // Check bottom neighbor
+            if (row < 4 && pool[i + 5] === 'pink') isValid = false;
+          }
+        }
       }
       return pool;
     }
 
     function initBoard() {
       board.innerHTML = '';
-      markedCount = 0;
-      generateColorPool().forEach(color => {
+      hasWon = false;
+      generateValidPool().forEach((color, index) => {
         const tile = document.createElement('div');
         tile.className = `tile ${color}`;
+        tile.dataset.index = index;
         tile.addEventListener('click', () => handleTileClick(tile));
         board.appendChild(tile);
       });
     }
 
+    const winningLines = [
+      [0,1,2,3,4], [5,6,7,8,9], [10,11,12,13,14], [15,16,17,18,19], [20,21,22,23,24], // Rows
+      [0,5,10,15,20], [1,6,11,16,21], [2,7,12,17,22], [3,8,13,18,23], [4,9,14,19,24], // Cols
+      [0, 4, 12, 20, 24] // Corners + Center
+    ];
+
     function handleTileClick(tile) {
-      if (tile.classList.contains('marked')) {
-        tile.classList.remove('marked');
-        markedCount--;
-      } else {
-        tile.classList.add('marked');
-        markedCount++;
-        if (markedCount === 5) {
+      tile.classList.toggle('marked');
+      checkWinCondition();
+    }
+
+    function checkWinCondition() {
+      if (hasWon) return; // Don't re-trigger if they keep tapping after winning
+
+      const tiles = document.querySelectorAll('.tile');
+      
+      // Rule 2: Must have at least 1 pink tile selected
+      let pinkSelected = false;
+      for (let i = 0; i < tiles.length; i++) {
+        if (tiles[i].classList.contains('marked') && tiles[i].classList.contains('pink')) {
+          pinkSelected = true;
+          break;
+        }
+      }
+      
+      if (!pinkSelected) return;
+
+      // Rule 1: Bingo verification
+      for (let line of winningLines) {
+        if (
+          tiles[line[0]].classList.contains('marked') &&
+          tiles[line[1]].classList.contains('marked') &&
+          tiles[line[2]].classList.contains('marked') &&
+          tiles[line[3]].classList.contains('marked') &&
+          tiles[line[4]].classList.contains('marked')
+        ) {
+          hasWon = true;
           set(ref(db, 'latestWinner'), {
             name: playerName,
             timestamp: Date.now()
           });
+          break;
         }
       }
     }
@@ -120,7 +171,7 @@
       const overlay = document.getElementById('win-overlay');
       document.getElementById('win-name').innerText = winnerName;
       overlay.style.display = 'flex';
-      setTimeout(() => { overlay.style.display = 'none'; }, 3000);
+      setTimeout(() => { overlay.style.display = 'none'; }, 4000);
     }
 
     document.getElementById('resetBtn').addEventListener('click', () => {
