@@ -1,3 +1,10 @@
+This is a classic mobile web problem. When a smartphone screen turns off, the phone's operating system cuts the browser's internet connection to save battery life. Because Firebase instantly sees the connection drop, it assumes the player left and triggers the `onDisconnect` command, wiping them from the game.
+
+To fix this, we can use a special built-in Firebase feature called `.info/connected`. It acts like a heartbeat monitor. If a phone goes to sleep and drops off the database, this monitor waits for the phone to wake back up. The exact millisecond the phone wakes up and reconnects to the internet, the game will automatically quietly inject the player's name back into the active list without them having to refresh the page.
+
+I have wrapped your presence system inside this reconnect monitor. Tap the **pencil icon** on GitHub, delete the old code, paste this version, and tap **Commit changes...**.
+
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -10,7 +17,6 @@
     
     h1 { font-size: 1.5rem; margin-bottom: 8px; }
     
-    /* Hamburger Menu Button */
     #menu-btn { position: absolute; top: 15px; left: 20px; font-size: 2rem; cursor: pointer; color: #a2a2c0; transition: color 0.2s; }
     #menu-btn:active { color: #ffffff; }
 
@@ -162,13 +168,20 @@
       playerName = chosenName;
       document.getElementById('player-title').innerText = playerName + "'s Board";
       
-      const myPlayerRef = push(ref(db, 'activePlayers'));
-      myPlayerId = myPlayerRef.key;
-      set(myPlayerRef, playerName);
-      onDisconnect(myPlayerRef).remove();
-      
-      // Remove this player's text submission if they suddenly close their browser
-      onDisconnect(ref(db, `roundSubmissions/${myPlayerId}`)).remove();
+      // Generate a unique ID for this player session
+      myPlayerId = push(ref(db, 'activePlayers')).key;
+      const myPlayerRef = ref(db, `activePlayers/${myPlayerId}`);
+
+      // The Sleep-Mode Wakeup Fix
+      const connectedRef = ref(db, ".info/connected");
+      onValue(connectedRef, (snap) => {
+        if (snap.val() === true) {
+          // Whenever the phone connects or wakes up from sleep, immediately re-add the player
+          set(myPlayerRef, playerName);
+          onDisconnect(myPlayerRef).remove();
+          onDisconnect(ref(db, `roundSubmissions/${myPlayerId}`)).remove();
+        }
+      });
 
       onValue(ref(db, 'activePlayers'), (snapshot) => {
         const players = [];
@@ -226,7 +239,6 @@
       currentSubmissions = snapshot.val() || {};
       const subCount = Object.keys(currentSubmissions).length;
       
-      // If submissions were cleared from the database, reset everything locally
       if (subCount === 0) {
         document.getElementById('submitNoteBtn').innerText = "שלח";
         document.getElementById('submitNoteBtn').disabled = false;
@@ -262,7 +274,6 @@
       resultsTimeout = setTimeout(() => {
           document.getElementById('results-overlay').style.display = 'none';
           isShowingResults = false;
-          // Clean the database up so the next round can begin
           remove(ref(db, 'roundSubmissions'));
       }, 8000);
     }
@@ -346,7 +357,6 @@
             name: playerName,
             timestamp: Date.now()
           });
-          // Clean up database text submissions when someone wins to prevent overflow
           remove(ref(db, 'roundSubmissions'));
           break;
         }
@@ -381,3 +391,5 @@
   </script>
 </body>
 </html>
+
+```
