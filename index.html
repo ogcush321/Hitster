@@ -1,3 +1,15 @@
+Yes, I can absolutely build this for you.
+
+I have added the new synchronized text submission system. Here is how it works:
+
+1. **The "שלח" (Submit) Button:** When a player types their text and hits submit, the button changes to "ממתין לשאר..." (Waiting for others) and locks.
+2. **The 8-Second Sync Popup:** The game constantly counts how many players are online and compares it to how many texts have been submitted. The exact second the last player hits submit, the **"תוצאות הסיבוב"** (Round Results) screen pops up on everyone's phone simultaneously, showing a clean list of everyone's names and what they guessed.
+3. **Smart Database Cleanup:** After exactly 8 seconds, the popup vanishes, the text boxes are cleared, the submit button resets, and the game automatically deletes all the text data from Firebase to prevent overflow. Additionally, whenever someone wins Bingo, it forces a database cleanup to keep everything running fast and clean.
+4. **Text Change:** "משימות" is now "משמעות הצבעים".
+
+Tap the **pencil icon** on GitHub, delete the old code, paste this final version, and tap **Commit changes...**.
+
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -14,14 +26,18 @@
     #menu-btn { position: absolute; top: 15px; left: 20px; font-size: 2rem; cursor: pointer; color: #a2a2c0; transition: color 0.2s; }
     #menu-btn:active { color: #ffffff; }
 
-    .players-container { width: 100%; max-width: 380px; background-color: #2b2b36; border-radius: 8px; padding: 10px; margin-bottom: 16px; font-size: 0.95rem; color: #a2a2c0; border: 1px solid #3a3a48; }
+    .players-container { width: 100%; max-width: 380px; background-color: #2b2b36; border-radius: 8px; padding: 10px; margin-bottom: 12px; font-size: 0.95rem; color: #a2a2c0; border: 1px solid #3a3a48; }
     .players-container strong { color: #2ecc71; }
     #online-players { color: #ffffff; font-weight: 500; }
 
-    .notes-container { width: 100%; max-width: 380px; margin-bottom: 16px; }
-    textarea { width: 100%; height: 100px; padding: 12px; border-radius: 10px; border: 2px solid #3a3a48; background-color: #2b2b36; color: #ffffff; font-size: 1.4rem; resize: none; user-select: text; -webkit-user-select: text; }
+    .notes-container { width: 100%; max-width: 380px; margin-bottom: 16px; display: flex; flex-direction: column; gap: 8px; }
+    textarea { width: 100%; height: 80px; padding: 12px; border-radius: 10px; border: 2px solid #3a3a48; background-color: #2b2b36; color: #ffffff; font-size: 1.2rem; resize: none; user-select: text; -webkit-user-select: text; direction: rtl; }
     textarea:focus { outline: none; border-color: #6c5ce7; }
     
+    #submitNoteBtn { width: 100%; padding: 12px; font-size: 1.1rem; font-weight: 700; color: #ffffff; background-color: #6c5ce7; border: none; border-radius: 10px; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.3); transition: background-color 0.2s, transform 0.08s; }
+    #submitNoteBtn:active:not(:disabled) { transform: scale(0.97); }
+    #submitNoteBtn:disabled { background-color: #4a4a5a; color: #a2a2c0; cursor: not-allowed; transform: none; box-shadow: none; }
+
     .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; width: 100%; max-width: 380px; aspect-ratio: 1 / 1; margin-bottom: 20px; }
     .tile { position: relative; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 2.6rem; font-weight: 900; color: rgba(0, 0, 0, 0.75); cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.3); -webkit-tap-highlight-color: transparent; }
     .tile:active { transform: scale(0.93); }
@@ -47,6 +63,14 @@
     .rule-color { width: 45px; height: 45px; border-radius: 8px; cursor: pointer; box-shadow: 0 2px 4px rgba(0,0,0,0.3); transition: transform 0.1s; }
     .rule-color:active { transform: scale(0.9); }
     #rule-text { text-align: center; direction: rtl; font-size: 1.3rem; min-height: 80px; color: #ffffff; padding: 0 10px; font-weight: 500; display: flex; align-items: center; justify-content: center; }
+
+    /* Round Results Modal */
+    #results-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.92); z-index: 300; justify-content: center; align-items: center; }
+    .results-content { background: #2b2b36; border: 2px solid #6c5ce7; padding: 25px 20px; border-radius: 12px; width: 90%; max-width: 400px; color: white; text-align: right; direction: rtl; display: flex; flex-direction: column; max-height: 80vh; }
+    .results-content h2 { text-align: center; color: #fd79a8; margin-bottom: 20px; font-size: 2rem; }
+    #results-list { overflow-y: auto; }
+    .result-item { margin-bottom: 12px; font-size: 1.2rem; border-bottom: 1px solid #3a3a48; padding-bottom: 8px; }
+    .result-item strong { color: #2ecc71; }
   </style>
 </head>
 <body>
@@ -56,7 +80,7 @@
   <div id="rules-overlay">
     <div class="rules-content">
       <button id="close-rules-btn">✖</button>
-      <h2>צבעים ומשמעויות</h2>
+      <h2>משמעות הצבעים</h2>
       <div class="rules-grid">
         <div class="rule-color blue" data-color="blue"></div>
         <div class="rule-color yellow" data-color="yellow"></div>
@@ -65,6 +89,13 @@
         <div class="rule-color purple" data-color="purple"></div>
       </div>
       <div id="rule-text">לחץ על צבע כדי לראות את המשימה</div>
+    </div>
+  </div>
+
+  <div id="results-overlay">
+    <div class="results-content">
+      <h2>תוצאות הסיבוב</h2>
+      <div id="results-list"></div>
     </div>
   </div>
 
@@ -77,7 +108,8 @@
   </div>
 
   <div class="notes-container">
-    <textarea id="playerNotes" placeholder="Write your text here..."></textarea>
+    <textarea id="playerNotes" placeholder="הקלד כאן..."></textarea>
+    <button id="submitNoteBtn">שלח</button>
   </div>
   
   <div class="grid" id="board"></div>
@@ -85,7 +117,7 @@
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-    import { getDatabase, ref, set, onValue, push, onDisconnect, get } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+    import { getDatabase, ref, set, onValue, push, onDisconnect, get, remove } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyBnZ9IdBR3TUiK2GhEPQEe05CuNhAlr-10",
@@ -103,10 +135,15 @@
     const colors = ['green', 'purple', 'pink', 'blue', 'yellow'];
     const board = document.getElementById('board');
     let playerName = "";
+    let myPlayerId = "";
     let hasWon = false;
+    let currentPlayersCount = 0;
+    let currentSubmissions = {};
+    let isShowingResults = false;
+    let resultsTimeout;
     const loadTime = Date.now();
 
-    // 1. Fetch current players to prevent duplicates and find next Player #
+    // 1. Name Assignment
     get(ref(db, 'activePlayers')).then((snapshot) => {
       let existingNames = [];
       if (snapshot.exists()) {
@@ -123,7 +160,6 @@
       let defaultName = "Player " + pNum;
       let chosenName = "";
 
-      // Loop until a unique name is entered
       while (true) {
         chosenName = prompt("What is your name?", defaultName);
         if (!chosenName) chosenName = defaultName;
@@ -138,17 +174,22 @@
       playerName = chosenName;
       document.getElementById('player-title').innerText = playerName + "'s Board";
       
-      // Add to active players list
       const myPlayerRef = push(ref(db, 'activePlayers'));
+      myPlayerId = myPlayerRef.key;
       set(myPlayerRef, playerName);
       onDisconnect(myPlayerRef).remove();
+      
+      // Remove this player's text submission if they suddenly close their browser
+      onDisconnect(ref(db, `roundSubmissions/${myPlayerId}`)).remove();
 
       onValue(ref(db, 'activePlayers'), (snapshot) => {
         const players = [];
+        currentPlayersCount = snapshot.size;
         snapshot.forEach((child) => {
           players.push(child.val());
         });
         document.getElementById('online-players').innerText = players.join(', ') || playerName;
+        checkIfAllSubmitted();
       });
 
       initBoard();
@@ -179,7 +220,66 @@
       });
     });
 
-    // 3. Board Generation and Logic
+    // 3. Round Submissions Logic
+    document.getElementById('submitNoteBtn').addEventListener('click', () => {
+      const text = document.getElementById('playerNotes').value.trim();
+      if (!text) return;
+      
+      document.getElementById('submitNoteBtn').innerText = "ממתין לשאר...";
+      document.getElementById('submitNoteBtn').disabled = true;
+
+      set(ref(db, `roundSubmissions/${myPlayerId}`), {
+        name: playerName,
+        text: text
+      });
+    });
+
+    onValue(ref(db, 'roundSubmissions'), (snapshot) => {
+      currentSubmissions = snapshot.val() || {};
+      const subCount = Object.keys(currentSubmissions).length;
+      
+      // If submissions were cleared from the database, reset everything locally
+      if (subCount === 0) {
+        document.getElementById('submitNoteBtn').innerText = "שלח";
+        document.getElementById('submitNoteBtn').disabled = false;
+        document.getElementById('playerNotes').value = "";
+        document.getElementById('results-overlay').style.display = 'none';
+        isShowingResults = false;
+        clearTimeout(resultsTimeout);
+      } else {
+        checkIfAllSubmitted();
+      }
+    });
+
+    function checkIfAllSubmitted() {
+      const subCount = Object.keys(currentSubmissions).length;
+      if (currentPlayersCount > 0 && subCount === currentPlayersCount) {
+        showResultsPopup();
+      }
+    }
+
+    function showResultsPopup() {
+      if (isShowingResults) return;
+      isShowingResults = true;
+      
+      const list = document.getElementById('results-list');
+      list.innerHTML = '';
+      for (let key in currentSubmissions) {
+          list.innerHTML += `<div class="result-item"><strong>${currentSubmissions[key].name}:</strong> ${currentSubmissions[key].text}</div>`;
+      }
+      
+      document.getElementById('results-overlay').style.display = 'flex';
+
+      clearTimeout(resultsTimeout);
+      resultsTimeout = setTimeout(() => {
+          document.getElementById('results-overlay').style.display = 'none';
+          isShowingResults = false;
+          // Clean the database up so the next round can begin
+          remove(ref(db, 'roundSubmissions'));
+      }, 8000);
+    }
+
+    // 4. Board Generation and Logic
     function generateValidPool() {
       let pool = [];
       let isValid = false;
@@ -258,12 +358,14 @@
             name: playerName,
             timestamp: Date.now()
           });
+          // Clean up database text submissions when someone wins to prevent overflow
+          remove(ref(db, 'roundSubmissions'));
           break;
         }
       }
     }
 
-    // 4. Listen for win, show screen for 3 seconds, then Auto-Reset for everyone
+    // 5. Listen for win, show screen for 3 seconds, then Auto-Reset for everyone
     const winnerRef = ref(db, 'latestWinner');
     onValue(winnerRef, (snapshot) => {
       const data = snapshot.val();
@@ -277,7 +379,6 @@
       document.getElementById('win-name').innerText = winnerName;
       overlay.style.display = 'flex';
       
-      // Wait exactly 3 seconds, hide the overlay, and reset everyone's board
       setTimeout(() => { 
         overlay.style.display = 'none'; 
         initBoard(); 
@@ -292,3 +393,5 @@
   </script>
 </body>
 </html>
+
+```
