@@ -1,15 +1,3 @@
-Yes, I can absolutely build this for you.
-
-I have added the new synchronized text submission system. Here is how it works:
-
-1. **The "שלח" (Submit) Button:** When a player types their text and hits submit, the button changes to "ממתין לשאר..." (Waiting for others) and locks.
-2. **The 8-Second Sync Popup:** The game constantly counts how many players are online and compares it to how many texts have been submitted. The exact second the last player hits submit, the **"תוצאות הסיבוב"** (Round Results) screen pops up on everyone's phone simultaneously, showing a clean list of everyone's names and what they guessed.
-3. **Smart Database Cleanup:** After exactly 8 seconds, the popup vanishes, the text boxes are cleared, the submit button resets, and the game automatically deletes all the text data from Firebase to prevent overflow. Additionally, whenever someone wins Bingo, it forces a database cleanup to keep everything running fast and clean.
-4. **Text Change:** "משימות" is now "משמעות הצבעים".
-
-Tap the **pencil icon** on GitHub, delete the old code, paste this final version, and tap **Commit changes...**.
-
-```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -393,5 +381,3 @@ Tap the **pencil icon** on GitHub, delete the old code, paste this final version
   </script>
 </body>
 </html>
-
-```
