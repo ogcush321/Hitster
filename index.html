@@ -25,6 +25,9 @@
     #submitNoteBtn:active:not(:disabled) { transform: scale(0.97); }
     #submitNoteBtn:disabled { background-color: #4a4a5a; color: #a2a2c0; cursor: not-allowed; transform: none; box-shadow: none; }
 
+    #forceResultsBtn { width: 100%; padding: 10px; font-size: 1rem; font-weight: 700; color: #ffffff; background-color: #e74c3c; border: none; border-radius: 10px; cursor: pointer; display: none; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+    #forceResultsBtn:active { transform: scale(0.97); }
+
     .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; width: 100%; max-width: 380px; aspect-ratio: 1 / 1; margin-bottom: 20px; }
     .tile { position: relative; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 2.6rem; font-weight: 900; color: rgba(0, 0, 0, 0.75); cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.3); -webkit-tap-highlight-color: transparent; }
     .tile:active { transform: scale(0.93); }
@@ -97,6 +100,7 @@
   <div class="notes-container">
     <textarea id="playerNotes" placeholder="הקלד כאן..."></textarea>
     <button id="submitNoteBtn">שלח</button>
+    <button id="forceResultsBtn">הצג בכל זאת (מישהו חסר)</button>
   </div>
   
   <div class="grid" id="board"></div>
@@ -125,12 +129,14 @@
     let myPlayerId = "";
     let hasWon = false;
     let currentPlayersCount = 0;
+    let maxPlayersThisRound = 0; 
     let currentSubmissions = {};
     let isShowingResults = false;
     let resultsTimeout;
+    let roundPlayers = new Set(); // The local memory of who played this round
     const loadTime = Date.now();
 
-    // 1. Name Assignment
+    // 1. Name Assignment and Sleep Fix
     get(ref(db, 'activePlayers')).then((snapshot) => {
       let existingNames = [];
       if (snapshot.exists()) {
@@ -161,28 +167,29 @@
       playerName = chosenName;
       document.getElementById('player-title').innerText = playerName + "'s Board";
       
-      // Generate a unique ID for this player session
       myPlayerId = push(ref(db, 'activePlayers')).key;
       const myPlayerRef = ref(db, `activePlayers/${myPlayerId}`);
 
-      // The Sleep-Mode Wakeup Fix
       const connectedRef = ref(db, ".info/connected");
       onValue(connectedRef, (snap) => {
         if (snap.val() === true) {
-          // Whenever the phone connects or wakes up from sleep, immediately re-add the player
           set(myPlayerRef, playerName);
           onDisconnect(myPlayerRef).remove();
-          onDisconnect(ref(db, `roundSubmissions/${myPlayerId}`)).remove();
         }
       });
 
       onValue(ref(db, 'activePlayers'), (snapshot) => {
-        const players = [];
         currentPlayersCount = snapshot.size;
+        
+        // Add everyone to the local Round Memory
         snapshot.forEach((child) => {
-          players.push(child.val());
+          roundPlayers.add(child.val());
         });
-        document.getElementById('online-players').innerText = players.join(', ') || playerName;
+
+        const displayPlayers = Array.from(roundPlayers);
+        maxPlayersThisRound = displayPlayers.length; // Lock in the highest number of players
+
+        document.getElementById('online-players').innerText = displayPlayers.join(', ') || playerName;
         checkIfAllSubmitted();
       });
 
@@ -221,11 +228,22 @@
       
       document.getElementById('submitNoteBtn').innerText = "ממתין לשאר...";
       document.getElementById('submitNoteBtn').disabled = true;
+      document.getElementById('forceResultsBtn').style.display = 'block';
 
       set(ref(db, `roundSubmissions/${myPlayerId}`), {
         name: playerName,
         text: text
       });
+    });
+
+    document.getElementById('forceResultsBtn').addEventListener('click', () => {
+        set(ref(db, 'forceShowResults'), Date.now());
+    });
+
+    onValue(ref(db, 'forceShowResults'), (snapshot) => {
+        if (snapshot.val() && snapshot.val() > loadTime) {
+            showResultsPopup();
+        }
     });
 
     onValue(ref(db, 'roundSubmissions'), (snapshot) => {
@@ -235,6 +253,7 @@
       if (subCount === 0) {
         document.getElementById('submitNoteBtn').innerText = "שלח";
         document.getElementById('submitNoteBtn').disabled = false;
+        document.getElementById('forceResultsBtn').style.display = 'none';
         document.getElementById('playerNotes').value = "";
         document.getElementById('results-overlay').style.display = 'none';
         isShowingResults = false;
@@ -246,7 +265,7 @@
 
     function checkIfAllSubmitted() {
       const subCount = Object.keys(currentSubmissions).length;
-      if (currentPlayersCount > 0 && subCount === currentPlayersCount) {
+      if (maxPlayersThisRound > 0 && subCount >= maxPlayersThisRound) {
         showResultsPopup();
       }
     }
@@ -261,6 +280,7 @@
           list.innerHTML += `<div class="result-item"><strong>${currentSubmissions[key].name}:</strong> ${currentSubmissions[key].text}</div>`;
       }
       
+      document.getElementById('forceResultsBtn').style.display = 'none';
       document.getElementById('results-overlay').style.display = 'flex';
 
       clearTimeout(resultsTimeout);
@@ -301,6 +321,19 @@
     function initBoard() {
       board.innerHTML = '';
       hasWon = false;
+      
+      // Clear the Round Memory to delete old ghosts, then rebuild with who is awake right now
+      roundPlayers.clear();
+      if (playerName) roundPlayers.add(playerName);
+      
+      get(ref(db, 'activePlayers')).then((snapshot) => {
+        if (snapshot.exists()) {
+            snapshot.forEach((child) => roundPlayers.add(child.val()));
+        }
+        maxPlayersThisRound = roundPlayers.size;
+        document.getElementById('online-players').innerText = Array.from(roundPlayers).join(', ') || playerName;
+      });
+
       generateValidPool().forEach((color, index) => {
         const tile = document.createElement('div');
         tile.className = `tile ${color}`;
@@ -311,11 +344,11 @@
     }
 
     const winningLines = [
-      [0,1,2,3,4], [5,6,7,8,9], [10,11,12,13,14], [15,16,17,18,19], [20,21,22,23,24], // Rows
-      [0,5,10,15,20], [1,6,11,16,21], [2,7,12,17,22], [3,8,13,18,23], [4,9,14,19,24], // Cols
-      [0, 4, 12, 20, 24], // Corners + Center
-      [0, 6, 12, 18, 24], // Diagonal 1
-      [4, 8, 12, 16, 20]  // Diagonal 2
+      [0,1,2,3,4], [5,6,7,8,9], [10,11,12,13,14], [15,16,17,18,19], [20,21,22,23,24],
+      [0,5,10,15,20], [1,6,11,16,21], [2,7,12,17,22], [3,8,13,18,23], [4,9,14,19,24],
+      [0, 4, 12, 20, 24],
+      [0, 6, 12, 18, 24], 
+      [4, 8, 12, 16, 20] 
     ];
 
     function handleTileClick(tile) {
@@ -378,9 +411,12 @@
 
     document.getElementById('resetBtn').addEventListener('click', () => {
       if (confirm("Are you sure you want to reset the board?")) {
+        remove(ref(db, 'roundSubmissions'));
         initBoard();
       }
     });
   </script>
 </body>
 </html>
+
+```
